@@ -77,6 +77,7 @@ export const createProduct = functions.https.onRequest(async (request, response)
     const vendorExists = await (await firestore.doc(`vendors/${vendorUid}`).get()).exists;
     const productExists = await (await firestore.doc(`products/${vendorUid + productName}`).get()).exists;
     const route = await firestore.doc(`Catagories/${Catagory}/subCatagory/${subCatagory}/subSubCatagory/${subSubCatagory}`);
+    const writePromises: Promise<any>[] = [];
     if (!(await route.get()).exists) {
         return response.send("The category selection doesn't exist")
     }
@@ -94,31 +95,33 @@ export const createProduct = functions.https.onRequest(async (request, response)
                 },
             ).then(() => {
                 let ref = firestore.collection("products").doc(`${vendorUid + productName}`);
-                const writePromises: Promise<any>[] = [];
                 typesArray.forEach((element: Map<any, any>) => {
                     writePromises.push(ref.collection("subProducts").add({ subProduct: element }));
-                },
-                );
-                writePromises.push(route
-                    .update({ Proudcts: admin.firestore.FieldValue.arrayUnion(`${vendorUid + productName}`) })
-                    .catch((err) => response.send(`${err}`)))
-                return Promise.all(writePromises);
-            }
+                });
+            })
+                .then(async () => {
+                    return await route.update({
+                        Proudcts: admin.firestore.FieldValue.arrayUnion(`${vendorUid + productName}`)
+                    })
+                }).catch((err) => {
+                    console.log(`${err}`)
+                    return response.send(err)
+                })
 
-            ).catch((err) => response.send(`${err}`)).then(async () => {
+                .catch((err) => response.send(`${err}`)).then(async () => {
 
 
 
-                const reference = await firestore.doc(`vendors/${vendorUid}`).update(
-                    {
-                        productName: admin.firestore.FieldValue.arrayUnion(`${vendorUid + productName}`)
-                    },
-                );
-                return Promise.resolve(reference)
-            }).then(() => response.send("->>>")).catch((err) => {
-                console.log(err);
-                return response.send(`${err}`)
-            });
+                    const reference = await firestore.doc(`vendors/${vendorUid}`).update(
+                        {
+                            productName: admin.firestore.FieldValue.arrayUnion(`${vendorUid + productName}`)
+                        },
+                    );
+                    return Promise.resolve(reference)
+                }).then(() => response.send("->>>")).catch((err) => {
+                    console.log(err);
+                    return response.send(`${err}`)
+                });
 
         } else if (vendorUid && productExists) {
             return response.send(`you already have a ${productName} consider editing that product or delting it `);
@@ -132,6 +135,7 @@ export const createProduct = functions.https.onRequest(async (request, response)
             return response.send('get a life you stupid fuck');
 
         }
+        return Promise.all(writePromises);
     }
 });
 //calculats the amount of total available products when there is an edit a subProduct(create,update,delete)
@@ -154,20 +158,20 @@ export const productAmountCalculator = functions.firestore.document('products/{p
 // shoudl reflect all changes performed onto products to all references
 export const onProductChange = functions.firestore.document('products/{productCollection}').onWrite(async (change, context) => {
     const writePromises: Promise<any>[] = [];
-    
-        if (change.after.exists && change.before.exists) {
-            if (change.after.data().route != change.before.data().route) {
-                const oldRoute = change.before.data().route;
-                const newRoute = change.after.data().route;
-                const newRoute1 = await firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
-        
+
+    if (change.after.exists && change.before.exists) {
+        if (change.after.data().route != change.before.data().route) {
+            const oldRoute = change.before.data().route;
+            const newRoute = change.after.data().route;
+            const newRoute1 = await firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
+
             if ((await newRoute1.get()).exists) {
                 writePromises.push(firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
                     .update({ Proudcts: admin.firestore.FieldValue.arrayUnion(`${context.params.productCollection}`) }))
                 writePromises.push(firestore.doc(`Catagories/${oldRoute['Catagory']}/subCatagory/${oldRoute['subCatagory']}/subSubCatagory/${oldRoute['subSubCatagory']}`)
                     .update({ Proudcts: admin.firestore.FieldValue.arrayRemove(`${context.params.productCollection}`) }))
             }
-            else{
+            else {
                 console.log(`new route doesn't exist`)
                 writePromises.push(null);
             }
@@ -175,18 +179,22 @@ export const onProductChange = functions.firestore.document('products/{productCo
         else {
             writePromises.push(null)
         }
-        }
-        
-        else if (change.after.exists && !change.before.exists) {
+    }
 
-            writePromises.push(null)
+    else if (change.after.exists && !change.before.exists) {
+        // const newRoute = change.after.data().route;
+        // const retur =  await (firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
+        //     .update({ Proudcts: admin.firestore.FieldValue.arrayUnion(`${context.params.productCollection}`) }).catch((err) => console.log(`${err}`)))
+        // return retur
+
+        writePromises.push(null)
         }
-        else if (!change.after.exists && change.before.exists) {
-            const oldRoute = change.before.data().route;
-            writePromises.push(firestore.doc(`Catagories/${oldRoute['Catagory']}/subCatagory/${oldRoute['subCatagory']}/subSubCatagory/${oldRoute['subSubCatagory']}`)
-                .update({ Proudcts: admin.firestore.FieldValue.arrayRemove(`${context.params.productCollection}`) }))
-        }
-    
+    else if (!change.after.exists && change.before.exists) {
+        const oldRoute = change.before.data().route;
+        writePromises.push(firestore.doc(`Catagories/${oldRoute['Catagory']}/subCatagory/${oldRoute['subCatagory']}/subSubCatagory/${oldRoute['subSubCatagory']}`)
+            .update({ Proudcts: admin.firestore.FieldValue.arrayRemove(`${context.params.productCollection}`) }))
+    }
+
     return Promise.all(writePromises)
 })
 
@@ -199,32 +207,36 @@ export const onProductChange = functions.firestore.document('products/{productCo
 //         })
 //     })
 // }
-export const onProductDelete = functions.firestore.document('vendors/{vendor}').onWrite((change,context)=>{
+export const onProductDelete = functions.firestore.document('vendors/{vendor}').onWrite((change, context) => {
     const writePromises: Promise<any>[] = [];
-    if(change.after.exists && change.before.exists){
-        const oldProducts:Array<any> = change.before.data().productName;
-        const newProducts:Array<any> = change.after.data().productName;
+    if (change.after.exists && change.before.exists) {
+        const oldProducts: Array<any> = change.before.data().productName;
+        const newProducts: Array<any> = change.after.data().productName;
         const deletedProducts = new Array<any>();
-        
-        if(oldProducts.length > newProducts.length){
+
+        if (oldProducts.length > newProducts.length) {
             oldProducts.forEach(element => {
                 console.log(`TOBE deleted ${element}`);
-                if(!newProducts.includes(element)){
+                if (!newProducts.includes(element)) {
                     console.log(`TOBE deleted ${element}`);
                     deletedProducts.push(element);
                 }
             });
-            deletedProducts.forEach(element=>{
+            deletedProducts.forEach(element => {
                 writePromises.push(firestore.doc(`products/${element}`).delete()
-                .catch((err)=>console.log(`${err}`)));
+                    .then(() =>
+                        admin.firestore().collection(`products/${element}/subProducts`).listDocuments())
+                    .then((doc) => {
+                        doc.map((val) => val.delete())
+                    })
+                    .catch((err) => console.log(`${err}`)));
             })
 
         }
     }
-    else if(!change.after.exists && change.before.exists){
-        const oldProducts:Array<any> = change.before.data().products;
-        admin.firestore().batch().delete
-        oldProducts.forEach(element=>{
+    else if (!change.after.exists && change.before.exists) {
+        const oldProducts: Array<any> = change.before.data().products;
+        oldProducts.forEach(element => {
             firestore.collection(`products`)
             writePromises.push(firestore.collection(`products`).doc(`${element}`).delete());
         })
@@ -234,7 +246,7 @@ export const onProductDelete = functions.firestore.document('vendors/{vendor}').
 
         writePromises.push(null)
     }
-    else{
+    else {
 
         writePromises.push(null)
     }
