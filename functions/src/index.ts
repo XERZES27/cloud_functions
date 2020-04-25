@@ -302,31 +302,37 @@ export const buyProduct = functions.https.onRequest(async (request, response) =>
     const subProduct = request.query.subProduct;
     const purchaseAmount = request.query.purchaseAmount
 
-    const route = firestore.doc(`products/${product}/subProducts/${subProduct}`);
-    if ((await route.get()).exists) {
+    const subProductroute = firestore.doc(`products/${product}/subProducts/${subProduct}`);
+    const productRoute = firestore.doc(`products/${product}`)
+    if ((await subProductroute.get()).exists) {
         return firestore.runTransaction((transaction) => {
 
-            return transaction.get(route).then((document) => {
-                const subProudctAmount = document.data().amount;
-                transaction.update(route, {
-                    subProduct: {
-                        amount: subProudctAmount - purchaseAmount
-                    }
-                })
-            }).then(() => {
-                return transaction.get(firestore.doc(`products/${product}`))
-                    .then((document) => {
-                        const SoldAmount = document.data().SoldAmount
-                        transaction.update(firestore.doc(`products/${product}`),
-                            {
-                                SoldAmount: SoldAmount + purchaseAmount
-                            })
+
+            return transaction.getAll(subProductroute,productRoute).then((documentArray)=>{
+
+                    const subProductAmount = documentArray[0].get('amount');
+                    const SoldProductAmount = documentArray[1].get('SoldAmount')
+                    transaction.update(subProductroute,
+                        {
+                            subProduct: {
+                                amount: subProductAmount - purchaseAmount
+                            }
+
+                        })
+                    transaction.update(productRoute,{
+                        SoldAmount: SoldProductAmount + purchaseAmount
+
                     })
-            });
+
+
+
+            })
         }).then(()=>{
             console.log(`transaction is  succesful`) 
+            response.send('->>>')
         }).catch((err)=>{
             console.log(`${err}`)
+            response.send(`${err}`)
         })
 
 
