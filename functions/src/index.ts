@@ -97,7 +97,7 @@ export const createProduct = functions.https.onRequest(async (request, response)
             ).then(() => {
                 let ref = firestore.collection("products").doc(`${vendorUid + productName}`);
                 typesArray.forEach((element: Map<any, any>) => {
-                    writePromises.push(ref.collection("subProducts").add({ subProduct: element }));
+                    writePromises.push(ref.collection("subProducts").add( element ));
                 });
                 return writePromises;
             }).catch((err) => {
@@ -156,7 +156,7 @@ export const productAmountCalculator = functions.firestore.document('products/{p
                 .then((array) => {
                     let totalAmount = 0;
                     array.forEach((element) => {
-                        totalAmount += element.data().subProduct['amount'];
+                        totalAmount += element.data().amount;
                     });
                     return ref.update({
                         TotalAmount: totalAmount
@@ -312,13 +312,13 @@ export const buyProduct = functions.https.onRequest(async (request, response) =>
 
                     const subProductAmount = documentArray[0].get('amount');
                     const SoldProductAmount = documentArray[1].get('SoldAmount')
-                    transaction.update(subProductroute,
+                    transaction.set(subProductroute,
                         {
                             subProduct: {
                                 amount: subProductAmount - purchaseAmount
                             }
 
-                        })
+                        },{merge:true})
                     transaction.update(productRoute,{
                         SoldAmount: SoldProductAmount + purchaseAmount
 
@@ -327,6 +327,33 @@ export const buyProduct = functions.https.onRequest(async (request, response) =>
 
 
             })
+
+            // return transaction.get(route).then((document) => {
+            //     transaction.getAll
+            //     const subProudctAmount = document.data().amount;
+            //     transaction.update(route, {
+            //         subProduct: {
+            //             amount: subProudctAmount - purchaseAmount
+            //         }
+            //     })
+            // }).then(() => {
+            //     return transaction.get(firestore.doc(`products/${product}`))
+            //         .then((document) => {
+                        
+            //             const SoldAmount = document.data().SoldAmount
+
+            //             transaction.update(route, {
+            //                 subProduct: {
+            //                     amount: subProudctAmount - purchaseAmount
+            //                 }
+            //             })
+
+            //             transaction.update(firestore.doc(`products/${product}`),
+            //                 {
+            //                     SoldAmount: SoldAmount + purchaseAmount
+            //                 })
+            //         })
+            // });
         }).then(()=>{
             console.log(`transaction is  succesful`) 
             response.send('->>>')
