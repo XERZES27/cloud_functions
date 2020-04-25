@@ -91,13 +91,15 @@ export const createProduct = functions.https.onRequest(async (request, response)
                     hypeDescription: hypeDescription,
                     StorageId: [],
                     review: [],
-                    TotalAmount: 0
+                    TotalAmount: 0,
+                    SoldAmount: 0
                 },
             ).then(() => {
                 let ref = firestore.collection("products").doc(`${vendorUid + productName}`);
                 typesArray.forEach((element: Map<any, any>) => {
                     writePromises.push(ref.collection("subProducts").add({ subProduct: element }));
                 });
+                return writePromises;
             }).catch((err) => {
                 console.log(`${err}`)
                 return 1
@@ -128,13 +130,6 @@ export const createProduct = functions.https.onRequest(async (request, response)
             });
 
             return Promise.all([createProductDocument, addProductToCatagories, addProductToVendor]).then(() => { response.send(`->>>`) })
-
-
-
-
-
-
-
 
         } else if (vendorUid && productExists) {
             return response.send(`you already have a ${productName} consider editing that product or delting it `);
@@ -179,11 +174,11 @@ export const productAmountCalculator = functions.firestore.document('products/{p
 
 });
 
-function compareMaps(map1,map2){
-    if(map1['Catagory'] === map2['Catagory'] && map1['subCatagory'] === map2['subCatagory'] && map1['subSubCatagory'] === map2['subSubCatagory'] ){
+function compareMaps(map1, map2) {
+    if (map1['Catagory'] === map2['Catagory'] && map1['subCatagory'] === map2['subCatagory'] && map1['subSubCatagory'] === map2['subSubCatagory']) {
         return true;
     }
-    else{
+    else {
         return false;
     }
 
@@ -191,32 +186,32 @@ function compareMaps(map1,map2){
 
 // shoudl reflect all changes performed onto products to all references
 export const onProductChange = functions.firestore.document('products/{productCollection}').onUpdate(async (change, context) => {
-        const writePromises: Promise<any>[] = [];
-        
-        if (!compareMaps(change.after.data().route, change.before.data().route)) {
-            console.log('onProductChange has buisness here')
-            const oldRoute = change.before.data().route;
-            const newRoute = change.after.data().route;
-            const newRoute1 = await firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
+    const writePromises: Promise<any>[] = [];
 
-            if ((await newRoute1.get()).exists) {
-                writePromises.push(firestore.doc(`Catagories/${oldRoute['Catagory']}/subCatagory/${oldRoute['subCatagory']}/subSubCatagory/${oldRoute['subSubCatagory']}`)
-                    .update({ Products: admin.firestore.FieldValue.arrayRemove(`${context.params.productCollection}`) }))
-                writePromises.push(firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
-                    .update({ Products: admin.firestore.FieldValue.arrayUnion(`${context.params.productCollection}`) }))
-                
-            }
-            else {
-                console.log(`new route doesn't exist`)
-                writePromises.push(null);
-            }
+    if (!compareMaps(change.after.data().route, change.before.data().route)) {
+        console.log('onProductChange has buisness here')
+        const oldRoute = change.before.data().route;
+        const newRoute = change.after.data().route;
+        const newRoute1 = await firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
+
+        if ((await newRoute1.get()).exists) {
+            writePromises.push(firestore.doc(`Catagories/${oldRoute['Catagory']}/subCatagory/${oldRoute['subCatagory']}/subSubCatagory/${oldRoute['subSubCatagory']}`)
+                .update({ Products: admin.firestore.FieldValue.arrayRemove(`${context.params.productCollection}`) }))
+            writePromises.push(firestore.doc(`Catagories/${newRoute['Catagory']}/subCatagory/${newRoute['subCatagory']}/subSubCatagory/${newRoute['subSubCatagory']}`)
+                .update({ Products: admin.firestore.FieldValue.arrayUnion(`${context.params.productCollection}`) }))
+
         }
         else {
-            console.log('onProductChange has no buisness here')
-            writePromises.push(null)
+            console.log(`new route doesn't exist`)
+            writePromises.push(null);
         }
-    
-    
+    }
+    else {
+        console.log('onProductChange has no buisness here')
+        writePromises.push(null)
+    }
+
+
 
     return Promise.all(writePromises)
 })
@@ -267,12 +262,76 @@ export const onProductDelete = functions.firestore.document('vendors/{vendor}').
     }
     return Promise.all(writePromises)
 
+})
+
+export const createReview_v1 = functions.https.onRequest( (request, response) =>{
+    const type = request.query.type;
+    const rating = request.query.rating;
+    const body = request.query.body;
+    const userId: any = request.query.userId;
+    const productId: any = request.query.productId;
+
+    firestore.collection('reviews').doc(`${productId + userId}`).set(
+        {
+            type: type,
+            rating: rating,
+            body: body,
+            storageArray: [],
+            userId: userId,
+            productId: productId,
+        }
+    ).then( async () => {
+        await firestore.collection('products').doc(`${productId}`).update({
+            review: admin.firestore.FieldValue.arrayUnion(`${productId + userId}`),
+        })
+    }).then( async () => {
+        await firestore.collection('users').doc(`${userId}`).update({
+            reviews: admin.firestore.FieldValue.arrayUnion(`${productId + userId}`),
+        })
+        response.send('SUCCESS!');
+    }).catch(e => {
+        console.log(e);
+        response.send(500);
+    });
+});
+
+
+export const buyProduct = functions.https.onRequest(async (request, response) => {
+
+    const product = request.query.product;
+    const subProduct = request.query.subProduct;
+    const purchaseAmount = request.query.purchaseAmount
+
+    const route = firestore.doc(`products/${product}/subProducts/${subProduct}`);
+    if ((await route.get()).exists) {
+        return firestore.runTransaction((transaction) => {
+
+            return transaction.get(route).then((document) => {
+                const subProudctAmount = document.data().amount;
+                transaction.update(route, {
+                    subProduct: {
+                        amount: subProudctAmount - purchaseAmount
+                    }
+                })
+            }).then(() => {
+                return transaction.get(firestore.doc(`products/${product}`))
+                    .then((document) => {
+                        const SoldAmount = document.data().SoldAmount
+                        transaction.update(firestore.doc(`products/${product}`),
+                            {
+                                SoldAmount: SoldAmount + purchaseAmount
+                            })
+                    })
+            });
+        }).then(()=>{
+            console.log(`transaction is  succesful`) 
+        }).catch((err)=>{
+            console.log(`${err}`)
+        })
 
 
 
-
-
-
+    }
 
 })
 
